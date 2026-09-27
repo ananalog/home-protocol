@@ -3,3 +3,7 @@ obj/
 *.user
 .vs/
 .idea/
+kotlin/.gradle/
+kotlin/build/
+kotlin/.kotlin/
+build/

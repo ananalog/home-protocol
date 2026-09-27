@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/csharp/">
+    <Project Path="csharp/Home.Protocol/Home.Protocol.csproj" />
+  </Folder>
+  <Folder Name="/gen/">
+    <Project Path="gen/Home.ProtoGen/Home.ProtoGen.csproj" />
+    <Project Path="gen/Home.ProtoVectors/Home.ProtoVectors.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/csharp/">
+    <Project Path="tests/csharp/Home.Protocol.Tests/Home.Protocol.Tests.csproj" />
+  </Folder>
+</Solution>

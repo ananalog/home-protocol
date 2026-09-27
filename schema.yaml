@@ -1,0 +1,422 @@
+# Home protocol schema — the single source of truth.
+# Spec: https://github.com/ananalog/home/blob/main/doc/02-protocol.md
+#
+# Wire format of a message:  ver:u8 type:u8 flags:u8 rsvd:u8 req_id:u16le  then TLV fields.
+# TLV: tag:u8 (bit7 = critical) | len:varint (LEB128) | value.
+# Scalars are fixed-width little-endian. `list<T>` = the same tag repeated.
+# Every field is optional on the wire; encoders emit fields in tag order.
+#
+# Field attributes:
+#   max       — max length for str/bytes (bytes of UTF-8) and max count for list<T> (sizes C buffers)
+#   critical  — receiver must understand this tag (unknown critical tag -> UNSUPPORTED)
+#   enum      — the u8/u16 holds a value of the named enum
+
+version:
+  major: 1
+  minor: 0
+
+constants:
+  HEADER_VERSION: 1
+  HEADER_SIZE: 6
+  MAX_MESSAGE: 2048
+  TCP_PORT: 7700
+  DISCOVER_PORT: 7701
+  MDNS_SERVICE: "_home._tcp"
+  BLE_SERVICE_UUID: "6e6f6d65-0001-4c9e-9a6e-686f6d650001"
+  BLE_RX_UUID: "6e6f6d65-0002-4c9e-9a6e-686f6d650001"
+  BLE_TX_UUID: "6e6f6d65-0003-4c9e-9a6e-686f6d650001"
+  BLE_INFO_UUID: "6e6f6d65-0004-4c9e-9a6e-686f6d650001"
+  BLE_MANUFACTURER_ID: 0xFFFF
+  OTA_CHUNK: 1024
+  OTA_WINDOW: 8
+
+enums:
+  Flags:
+    RESP: 1
+    ERR: 2
+    NOACK: 4
+
+  ErrorCode:
+    OK: 0
+    UNSUPPORTED: 1
+    BAD_REQUEST: 2
+    NOT_FOUND: 3
+    FORBIDDEN: 4
+    BUSY: 5
+    INVALID_VALUE: 6
+    OTA_BAD_IMAGE: 7
+    OTA_HASH_MISMATCH: 8
+    OTA_WRONG_MODEL: 9
+    STORAGE: 10
+    SENSOR: 11
+    INTERNAL: 12
+    TIMEOUT: 13
+
+  Model:
+    UNKNOWN: 0
+    CO2_EGG: 1
+    RELAY: 2
+    BOARD_PROBE: 0x7F00
+
+  PointKind:
+    SENSOR: 0
+    ACTUATOR: 1
+    SETTING: 2
+    ACTION: 3
+
+  PointType:
+    BOOL: 0
+    I32: 1
+    F32: 2
+    STR: 3
+    ENUM: 4
+
+  UiHint:
+    AUTO: 0
+    GAUGE: 1
+    SWITCH: 2
+    SLIDER: 3
+    BUTTON: 4
+    SELECT: 5
+    TEXT: 6
+    HIDDEN: 7
+
+  PointFlags:
+    HISTORY: 1
+    READONLY: 2
+    ADVANCED: 4
+    PERSIST: 8
+
+  ResetMode:
+    SETTINGS: 1
+    FIRMWARE: 2
+    ALL: 3
+
+  BootPartition:
+    FACTORY: 0
+    OTA0: 1
+    OTA1: 2
+    UNKNOWN: 255
+
+  AdoptState:
+    NEW: 0
+    ADOPTED: 1
+    BLOCKED: 2
+
+  IpMode:
+    DHCP: 0
+    STATIC: 1
+
+  BleMode:
+    ALWAYS: 0
+    BUTTON: 1
+    OFF: 2
+
+  LogLevel:
+    NONE: 0
+    ERROR: 1
+    WARN: 2
+    INFO: 3
+    DEBUG: 4
+    VERBOSE: 5
+
+  WifiAuth:
+    OPEN: 0
+    WEP: 1
+    WPA: 2
+    WPA2: 3
+    WPA3: 4
+    OTHER: 5
+
+  LinkState:
+    NO_CONFIG: 0
+    WIFI_CONNECTING: 1
+    IP_OK: 2
+    SERVER_CONNECTING: 3
+    ONLINE: 4
+
+  OtaState:
+    IDLE: 0
+    RECEIVING: 1
+    VERIFYING: 2
+    DONE: 3
+    FAILED: 4
+
+  EventKind:
+    BOOT: 1
+    BUTTON: 2
+    THRESHOLD: 3
+    SENSOR_ERROR: 4
+    PREHEAT_DONE: 5
+
+structs:
+  # One value of a point. Exactly one field is set.
+  Value:
+    - {tag: 1, name: b, type: bool}
+    - {tag: 2, name: i, type: i32}
+    - {tag: 3, name: f, type: f32}
+    - {tag: 4, name: s, type: str, max: 64}
+
+  # Description of one point of a device (answer to DESCRIBE).
+  PointDef:
+    - {tag: 1, name: id, type: u8, critical: true}
+    - {tag: 2, name: key, type: str, max: 24}
+    - {tag: 3, name: title, type: str, max: 48}
+    - {tag: 4, name: kind, type: u8, enum: PointKind}
+    - {tag: 5, name: type, type: u8, enum: PointType}
+    - {tag: 6, name: unit, type: str, max: 8}
+    - {tag: 7, name: min, type: f32}
+    - {tag: 8, name: max, type: f32}
+    - {tag: 9, name: step, type: f32}
+    - {tag: 10, name: options, type: "list<str>", max: 8, item_max: 16}
+    - {tag: 11, name: ui, type: u8, enum: UiHint}
+    - {tag: 12, name: flags, type: u8}
+    - {tag: 13, name: thr_warn, type: f32}
+    - {tag: 14, name: thr_alarm, type: f32}
+    - {tag: 15, name: has_arg, type: bool}
+    - {tag: 16, name: arg_default, type: f32}
+
+  Sample:
+    - {tag: 1, name: point, type: u8, critical: true}
+    - {tag: 2, name: value, type: Value}
+    - {tag: 3, name: ts_ms, type: u64}
+
+  WifiNet:
+    - {tag: 1, name: ssid, type: str, max: 32}
+    - {tag: 2, name: rssi, type: i32}
+    - {tag: 3, name: auth, type: u8, enum: WifiAuth}
+    - {tag: 4, name: channel, type: u8}
+
+  # IPv4 addresses are u32 whose little-endian bytes are a.b.c.d (same as lwIP ip4_addr_t).
+  NetConfig:
+    - {tag: 1, name: ip_mode, type: u8, enum: IpMode}
+    - {tag: 2, name: ip, type: u32}
+    - {tag: 3, name: mask, type: u32}
+    - {tag: 4, name: gw, type: u32}
+    - {tag: 5, name: dns1, type: u32}
+    - {tag: 6, name: dns2, type: u32}
+    - {tag: 7, name: hostname, type: str, max: 32}
+
+  # System settings of a device. wifi_pass is write-only (never returned by CFG_GET).
+  DeviceConfig:
+    - {tag: 1, name: name, type: str, max: 48}
+    - {tag: 2, name: room, type: str, max: 48}
+    - {tag: 3, name: wifi_ssid, type: str, max: 32}
+    - {tag: 4, name: wifi_pass, type: str, max: 64}
+    - {tag: 5, name: net, type: NetConfig}
+    - {tag: 6, name: server_host, type: str, max: 64}
+    - {tag: 7, name: server_port, type: u16}
+    - {tag: 8, name: ble_mode, type: u8, enum: BleMode}
+    - {tag: 9, name: log_level, type: u8, enum: LogLevel}
+
+  NetStatus:
+    - {tag: 1, name: state, type: u8, enum: LinkState}
+    - {tag: 2, name: current, type: NetConfig}
+    - {tag: 3, name: rssi, type: i32}
+    - {tag: 4, name: ssid, type: str, max: 32}
+    - {tag: 5, name: server, type: str, max: 64}
+    - {tag: 6, name: mac, type: str, max: 17}
+
+  # Body of any response with the ERR flag.
+  ErrorBody:
+    - {tag: 1, name: code, type: u8, enum: ErrorCode}
+    - {tag: 2, name: text, type: str, max: 96}
+
+# Messages. `req` — body of the request (or of a one-way message), `resp` — body of the response.
+# dir: d2s — device to server/phone, s2d — server/phone to device.
+messages:
+  HELLO:
+    id: 0x01
+    dir: d2s
+    req:
+      - {tag: 1, name: device_id, type: str, max: 12, critical: true}
+      - {tag: 2, name: model, type: u16, enum: Model}
+      - {tag: 3, name: hw_rev, type: u8}
+      - {tag: 4, name: fw_version, type: str, max: 32}
+      - {tag: 5, name: proto_major, type: u8}
+      - {tag: 6, name: proto_minor, type: u8}
+      - {tag: 7, name: boot_partition, type: u8, enum: BootPartition}
+      - {tag: 8, name: reset_reason, type: u8}
+      - {tag: 9, name: uptime_s, type: u32}
+      - {tag: 10, name: name, type: str, max: 48}
+      - {tag: 11, name: idf_version, type: str, max: 32}
+      - {tag: 12, name: pending_verify, type: bool}
+    resp:
+      - {tag: 1, name: time_ms, type: u64}
+      - {tag: 2, name: state, type: u8, enum: AdoptState}
+      - {tag: 3, name: log_level, type: u8, enum: LogLevel}
+
+  PING:
+    id: 0x03
+    dir: any
+    req:
+      - {tag: 1, name: time_ms, type: u64}
+    resp:
+      - {tag: 1, name: time_ms, type: u64}
+
+  DESCRIBE:
+    id: 0x10
+    dir: s2d
+    req: []
+    resp:
+      - {tag: 1, name: points, type: "list<PointDef>", max: 24}
+
+  STATE:
+    id: 0x11
+    dir: d2s
+    req:
+      - {tag: 1, name: samples, type: "list<Sample>", max: 24}
+
+  REPORT:
+    id: 0x12
+    dir: d2s
+    req:
+      - {tag: 1, name: samples, type: "list<Sample>", max: 24}
+
+  SET:
+    id: 0x13
+    dir: s2d
+    req:
+      - {tag: 1, name: point, type: u8, critical: true}
+      - {tag: 2, name: value, type: Value}
+    resp:
+      - {tag: 1, name: value, type: Value}
+
+  GET:
+    id: 0x14
+    dir: s2d
+    req:
+      - {tag: 1, name: points, type: "list<u8>", max: 24}
+    resp:
+      - {tag: 1, name: samples, type: "list<Sample>", max: 24}
+
+  INVOKE:
+    id: 0x15
+    dir: s2d
+    req:
+      - {tag: 1, name: point, type: u8, critical: true}
+      - {tag: 2, name: arg, type: f32}
+    resp:
+      - {tag: 1, name: text, type: str, max: 96}
+
+  EVENT:
+    id: 0x16
+    dir: d2s
+    req:
+      - {tag: 1, name: kind, type: u8, enum: EventKind}
+      - {tag: 2, name: point, type: u8}
+      - {tag: 3, name: value, type: Value}
+      - {tag: 4, name: text, type: str, max: 96}
+      - {tag: 5, name: ts_ms, type: u64}
+
+  CFG_GET:
+    id: 0x20
+    dir: s2d
+    req: []
+    resp:
+      - {tag: 1, name: config, type: DeviceConfig}
+
+  CFG_SET:
+    id: 0x21
+    dir: s2d
+    req:
+      - {tag: 1, name: config, type: DeviceConfig}
+    resp: []
+
+  WIFI_SCAN:
+    id: 0x22
+    dir: s2d
+    req: []
+    resp:
+      - {tag: 1, name: networks, type: "list<WifiNet>", max: 20}
+
+  NET_STATUS:
+    id: 0x23
+    dir: s2d
+    req: []
+    resp:
+      - {tag: 1, name: status, type: NetStatus}
+
+  OTA_BEGIN:
+    id: 0x30
+    dir: s2d
+    req:
+      - {tag: 1, name: size, type: u32}
+      - {tag: 2, name: sha256, type: bytes, max: 32}
+      - {tag: 3, name: version, type: str, max: 32}
+      - {tag: 4, name: model, type: u16, enum: Model}
+    resp:
+      - {tag: 1, name: chunk, type: u16}
+      - {tag: 2, name: resume_from, type: u32}
+
+  OTA_DATA:
+    id: 0x31
+    dir: s2d
+    req:
+      - {tag: 1, name: offset, type: u32}
+      - {tag: 2, name: data, type: bytes, max: 1400}
+    resp:
+      - {tag: 1, name: next_offset, type: u32}
+
+  OTA_END:
+    id: 0x32
+    dir: s2d
+    req: []
+    resp: []
+
+  OTA_ABORT:
+    id: 0x33
+    dir: s2d
+    req: []
+    resp: []
+
+  OTA_STATUS:
+    id: 0x34
+    dir: any
+    req: []
+    resp:
+      - {tag: 1, name: state, type: u8, enum: OtaState}
+      - {tag: 2, name: received, type: u32}
+      - {tag: 3, name: error, type: u8, enum: ErrorCode}
+
+  OTA_CONFIRM:
+    id: 0x35
+    dir: s2d
+    req: []
+    resp: []
+
+  REBOOT:
+    id: 0x40
+    dir: s2d
+    req: []
+    resp: []
+
+  FACTORY_RESET:
+    id: 0x41
+    dir: s2d
+    req:
+      - {tag: 1, name: mode, type: u8, enum: ResetMode}
+    resp: []
+
+  IDENTIFY:
+    id: 0x42
+    dir: s2d
+    req:
+      - {tag: 1, name: seconds, type: u8}
+    resp: []
+
+  LOG:
+    id: 0x50
+    dir: d2s
+    req:
+      - {tag: 1, name: level, type: u8, enum: LogLevel}
+      - {tag: 2, name: tag, type: str, max: 16}
+      - {tag: 3, name: text, type: str, max: 200}
+      - {tag: 4, name: ts_ms, type: u64}
+
+  PAIR_CODE:
+    id: 0x60
+    dir: s2d
+    req:
+      - {tag: 1, name: code, type: u16}
+    resp: []
